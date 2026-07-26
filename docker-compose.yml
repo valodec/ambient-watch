@@ -1,0 +1,11 @@
+services:
+  ambient-watch:
+    build: .
+    image: ambient-watch:latest
+    container_name: ambient-watch
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TMDB_API_READ_TOKEN=${TMDB_API_READ_TOKEN}

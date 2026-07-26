@@ -58,6 +58,17 @@ The recommendation prompt/criteria for "ambient watchability" live in the
 `SYSTEM_PROMPT` constant in `src/lib/claude.ts` — that's the single place
 tuning the recommendation behavior.
 
+## Docker
+
+`next.config.ts` sets `output: "standalone"`. The `Dockerfile` is a
+multi-stage build (deps → builder → runner) that copies only the standalone
+trace output plus `public/` and `.next/static` into the final image — do not
+add `RUN npm install` steps to the `runner` stage, the standalone output is
+already self-contained. `docker-compose.yml` expects a `.env` file (Compose's
+default lookup name, distinct from `.env.local` used by `next dev`) providing
+`ANTHROPIC_API_KEY` and `TMDB_API_READ_TOKEN`. See README.md for Portainer /
+Synology Container Manager deployment notes.
+
 ## Next.js version note
 
 This project pins a Next.js release newer than common training data

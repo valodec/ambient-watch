@@ -38,3 +38,49 @@ Open [http://localhost:3000](http://localhost:3000).
 - `npm run build` — production build
 - `npm run start` — run the production build
 - `npm run lint` — lint
+
+## Running with Docker
+
+The repo includes a `Dockerfile` (multi-stage, Next.js standalone output) and
+a `docker-compose.yml`. Works with plain `docker compose`, Synology Container
+Manager, or Portainer.
+
+### Plain Docker Compose
+
+```bash
+cp .env.example .env
+# fill in ANTHROPIC_API_KEY and TMDB_API_READ_TOKEN in .env
+docker compose up -d --build
+```
+
+Compose automatically reads variables from a `.env` file in the same
+directory — that's the standard filename it looks for (not `.env.local`,
+which is only used by `next dev`/`next build` outside Docker).
+
+The app is then available at `http://<host>:3000`.
+
+### Synology Container Manager
+
+1. In Container Manager → **Project**, create a new project pointing at this
+   repo folder (or upload `docker-compose.yml` + `Dockerfile`).
+2. Add a `.env` file in the same project folder with `ANTHROPIC_API_KEY` and
+   `TMDB_API_READ_TOKEN` set (Container Manager reads it the same way Compose
+   does), or set both as environment variables in the project's settings.
+3. Build and start the project. Port 3000 is exposed by default — remap it in
+   the project's port settings if 3000 is already in use on your NAS.
+
+### Portainer
+
+1. **Stacks** → **Add stack** → paste the contents of `docker-compose.yml`
+   (or point Portainer at this Git repo for GitOps-style redeploys).
+2. In the stack's **Environment variables** section, add `ANTHROPIC_API_KEY`
+   and `TMDB_API_READ_TOKEN` (or upload a `.env` file if your Portainer
+   version supports it).
+3. Deploy the stack.
+
+### Notes
+
+- The container needs outbound internet access to reach `api.anthropic.com`
+  and `api.themoviedb.org` — no inbound access beyond port 3000 is required.
+- Health check: `GET /` should return 200 once the container is up.
+- To rebuild after pulling changes: `docker compose up -d --build`.
