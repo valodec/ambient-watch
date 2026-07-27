@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getShowById, searchShowByName, type TmdbShow } from "@/lib/tmdb";
 import { getRecommendations } from "@/lib/claude";
+import {
+  getDislikedShows,
+  getExclusionSet,
+  getLibrary,
+  getProfile,
+  getTasteShows,
+  upsertLibraryEntry,
+} from "@/lib/db";
 
 interface RequestBody {
-  tmdbIds: number[];
+  profileId: number;
+  newTmdbIds: number[];
 }
 
 export interface RecommendationResult {
@@ -22,20 +31,50 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const tmdbIds = Array.isArray(body.tmdbIds)
-    ? body.tmdbIds.filter((id) => Number.isInteger(id))
+  const profileId = Number(body.profileId);
+  if (!Number.isInteger(profileId)) {
+    return NextResponse.json({ error: "profileId is required" }, { status: 400 });
+  }
+  if (!getProfile(profileId)) {
+    return NextResponse.json({ error: "Unknown profile" }, { status: 404 });
+  }
+
+  const newTmdbIds = Array.isArray(body.newTmdbIds)
+    ? body.newTmdbIds.filter((id) => Number.isInteger(id))
     : [];
 
-  if (tmdbIds.length === 0) {
+  // Fetch and seed any newly-selected shows into this profile's library.
+  let newlySeeded: TmdbShow[];
+  try {
+    newlySeeded = await Promise.all(newTmdbIds.map((id) => getShowById(id)));
+  } catch (err) {
     return NextResponse.json(
-      { error: "Provide at least one numeric tmdbIds entry" },
+      { error: err instanceof Error ? err.message : "Failed to fetch TMDB show data" },
+      { status: 502 },
+    );
+  }
+  for (const show of newlySeeded) {
+    upsertLibraryEntry({
+      profileId,
+      tmdbId: show.id,
+      name: show.name,
+      firstAirYear: show.firstAirDate ? Number(show.firstAirDate.slice(0, 4)) : null,
+      source: "seed",
+    });
+  }
+
+  const library = getLibrary(profileId);
+  if (library.length === 0) {
+    return NextResponse.json(
+      { error: "Add at least one show you like before requesting recommendations" },
       { status: 400 },
     );
   }
 
-  let inputShows: TmdbShow[];
+  const tasteEntries = getTasteShows(profileId);
+  let tasteShows: TmdbShow[];
   try {
-    inputShows = await Promise.all(tmdbIds.map((id) => getShowById(id)));
+    tasteShows = await Promise.all(tasteEntries.map((e) => getShowById(e.tmdbId)));
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to fetch TMDB show data" },
@@ -43,9 +82,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const alreadyKnownNames = library.map((e) => `${e.name}${e.firstAirYear ? ` (${e.firstAirYear})` : ""}`);
+  const dislikedNames = getDislikedShows(profileId).map((e) => e.name);
+  const exclusionSet = getExclusionSet(profileId);
+
   let recommendations;
   try {
-    recommendations = await getRecommendations(inputShows, 8);
+    recommendations = await getRecommendations(tasteShows, alreadyKnownNames, dislikedNames, 8);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to get recommendations" },
@@ -53,12 +96,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const results: RecommendationResult[] = await Promise.all(
+  const resolved = await Promise.all(
     recommendations.map(async (rec) => {
-      const tmdb = await searchShowByName(rec.title).catch(() => null);
+      const tmdb = await searchShowByName(rec.title, rec.firstAirYear).catch(() => null);
       return { ...rec, tmdb };
     }),
   );
 
-  return NextResponse.json({ inputShows, results });
+  // Server-side dedupe: never surface something already in this profile's library,
+  // even if Claude's prompt-level exclusion instruction was ignored.
+  const results: RecommendationResult[] = resolved.filter(
+    (r) => !r.tmdb || !exclusionSet.has(r.tmdb.id),
+  );
+
+  return NextResponse.json({ inputShows: tasteShows, results });
 }

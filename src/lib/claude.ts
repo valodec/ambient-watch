@@ -8,7 +8,11 @@ const client = new Anthropic();
 const RecommendationSchema = z.object({
   recommendations: z.array(
     z.object({
-      title: z.string().describe("Exact TV series title, matching how it's listed on TMDB"),
+      title: z
+        .string()
+        .describe(
+          "The show's title ONLY, exactly as listed on TMDB — no annotations, prefixes, or commentary (e.g. 'Fargo', never 'A darker pick: Fargo' or 'Fargo (like The Office)')",
+        ),
       firstAirYear: z.number().describe("Year the series first aired, to disambiguate remakes/reboots"),
       ambientWatchabilityScore: z
         .number()
@@ -28,18 +32,29 @@ const SYSTEM_PROMPT = `You recommend TV series that are great to have on in the 
 - Familiar formats (procedurals, sitcoms, panel/talk shows, low-stakes competition, character-driven dramedies) tend to score well
 - Shows with subtitles-only foreign dialogue, rapid subtitle-dependent jokes, or heavy visual spectacle as the main draw score poorly
 
-Given a list of TV series the user already enjoys, recommend similar shows that also score well on ambient watchability. Do not recommend any show already in the input list.`;
+Given a list of TV series the user already enjoys, recommend similar shows that also score well on ambient watchability. Do not recommend any show already in the input list. The "title" field must contain only the show's bare title — never add a descriptive prefix, suffix, or parenthetical commentary to it; put any framing or comparison in the "reason" field instead.`;
 
 export async function getRecommendations(
-  inputShows: TmdbShow[],
+  tasteShows: TmdbShow[],
+  alreadyKnownNames: string[],
+  dislikedNames: string[],
   count: number,
 ): Promise<Recommendation[]> {
-  const showSummaries = inputShows
+  const showSummaries = tasteShows
     .map(
       (s) =>
         `- "${s.name}" (${s.firstAirDate?.slice(0, 4) ?? "?"}) — genres: ${s.genres.join(", ") || "unknown"}; keywords: ${s.keywords.slice(0, 8).join(", ") || "none"}\n  ${s.overview}`,
     )
     .join("\n\n");
+
+  const exclusionLine =
+    alreadyKnownNames.length > 0
+      ? `\n\nDo not recommend any of these — I already know them or have already seen them: ${alreadyKnownNames.join(", ")}.`
+      : "";
+  const dislikedLine =
+    dislikedNames.length > 0
+      ? `\n\nI disliked these — avoid recommending shows with a similar tone or style: ${dislikedNames.join(", ")}.`
+      : "";
 
   const response = await client.messages.parse({
     model: "claude-opus-5",
@@ -53,7 +68,7 @@ export async function getRecommendations(
     messages: [
       {
         role: "user",
-        content: `Here are the shows I like:\n\n${showSummaries}\n\nRecommend ${count} TV series good for painting, puzzling, or cooking along to, based on these.`,
+        content: `Here are the shows I like:\n\n${showSummaries}${exclusionLine}${dislikedLine}\n\nRecommend ${count} TV series good for painting, puzzling, or cooking along to, based on these.`,
       },
     ],
   });

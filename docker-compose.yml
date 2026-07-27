@@ -9,3 +9,6 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - TMDB_API_READ_TOKEN=${TMDB_API_READ_TOKEN}
+      - DB_PATH=/app/data/ambient-watch.db
+    volumes:
+      - ./data:/app/data

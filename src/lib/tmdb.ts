@@ -83,7 +83,10 @@ export async function getShowById(tmdbId: number): Promise<TmdbShow> {
   };
 }
 
-export async function searchShowByName(name: string): Promise<TmdbShow | null> {
+export async function searchShowByName(
+  name: string,
+  preferredYear?: number,
+): Promise<TmdbShow | null> {
   const res = await fetch(
     `${TMDB_API_BASE}/search/tv?query=${encodeURIComponent(name)}&include_adult=false`,
     { headers: tmdbHeaders() },
@@ -91,8 +94,50 @@ export async function searchShowByName(name: string): Promise<TmdbShow | null> {
   if (!res.ok) return null;
 
   const data: TmdbSearchResponse = await res.json();
-  const top = data.results[0];
-  if (!top) return null;
+  if (data.results.length === 0) {
+    // The model occasionally decorates the title (e.g. "A darker pick: Fargo").
+    // Retry with just the text after the last colon/dash before giving up.
+    const stripped = name.replace(/^.*[:\-–]\s*/, "").trim();
+    if (stripped && stripped !== name) {
+      return searchShowByName(stripped, preferredYear);
+    }
+    return null;
+  }
 
-  return getShowById(top.id);
+  let best = data.results[0];
+  if (preferredYear) {
+    const yearMatch = data.results.find(
+      (r) => r.first_air_date && Number(r.first_air_date.slice(0, 4)) === preferredYear,
+    );
+    if (yearMatch) best = yearMatch;
+  }
+
+  return getShowById(best.id);
+}
+
+export interface TmdbSearchResult {
+  id: number;
+  name: string;
+  year: number | null;
+  posterUrl: string | null;
+  overview: string;
+}
+
+const TMDB_THUMB_BASE = "https://image.tmdb.org/t/p/w92";
+
+export async function searchShows(query: string): Promise<TmdbSearchResult[]> {
+  const res = await fetch(
+    `${TMDB_API_BASE}/search/tv?query=${encodeURIComponent(query)}&include_adult=false`,
+    { headers: tmdbHeaders() },
+  );
+  if (!res.ok) return [];
+
+  const data: TmdbSearchResponse = await res.json();
+  return data.results.slice(0, 6).map((r) => ({
+    id: r.id,
+    name: r.name,
+    year: r.first_air_date ? Number(r.first_air_date.slice(0, 4)) : null,
+    posterUrl: r.poster_path ? `${TMDB_THUMB_BASE}${r.poster_path}` : null,
+    overview: r.overview,
+  }));
 }
