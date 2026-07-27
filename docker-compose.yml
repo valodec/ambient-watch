@@ -4,6 +4,10 @@ services:
     image: ambient-watch:latest
     container_name: ambient-watch
     restart: unless-stopped
+    # Overridable so a bind-mounted ./data owned by a specific host user (e.g. on a
+    # NAS with ACL-based permissions, like Synology) can be written by the container.
+    # Defaults to the image's built-in non-root `nextjs` user (uid/gid 1001).
+    user: "${PUID:-1001}:${PGID:-1001}"
     ports:
       - "3000:3000"
     environment:

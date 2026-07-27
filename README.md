@@ -109,10 +109,25 @@ The app is then available at `http://<host>:3000`.
 - To rebuild after pulling changes: `docker compose up -d --build`.
 - **Data persistence**: `docker-compose.yml` bind-mounts `./data` to
   `/app/data` inside the container, where the SQLite database lives. The
-  container runs as uid `1001` (a non-root `nextjs` user) — on first deploy,
-  create the host directory and give it matching ownership before starting
-  the stack, or the container gets a permission error on its first write:
+  container runs as a non-root user, controlled by `PUID`/`PGID` (default
+  `1001:1001`, the image's built-in `nextjs` user) — set these in your `.env`
+  to match whoever should own `./data` on the host:
 
   ```bash
-  mkdir -p data && chown 1001:1001 data   # or: chmod 777 data
+  mkdir -p data && chown 1001:1001 data   # defaults line up, nothing else needed
+  ```
+
+  **On a NAS with ACL-based permissions (Synology Container Manager, in
+  particular)**: plain `chown`/`chmod` on the host directory is not enough —
+  Synology's ACL layer grants access only to named principals (your NAS user
+  account, `administrators`, etc.), not to an arbitrary container uid like
+  `1001`, regardless of what the POSIX bits show in `ls -la`. Instead, set
+  `PUID`/`PGID` in `.env` to your actual NAS user's uid/gid (find them with
+  `id <username>` over SSH) so the container runs *as that user* — then no
+  ACL surgery is needed, since the NAS already grants that account access:
+
+  ```bash
+  # .env, in addition to the API keys
+  PUID=1026
+  PGID=100
   ```

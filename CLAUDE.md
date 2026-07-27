@@ -88,9 +88,13 @@ add `RUN npm install` steps to the `runner` stage, the standalone output is
 already self-contained. `docker-compose.yml` expects a `.env` file (Compose's
 default lookup name, distinct from `.env.local` used by `next dev`) providing
 `ANTHROPIC_API_KEY` and `TMDB_API_READ_TOKEN`, plus a bind-mounted `./data`
-volume for the SQLite file (see README's Data persistence note — the uid
-1001/host ownership gotcha is a common redeploy failure mode). See README.md
-for Portainer / Synology Container Manager deployment notes.
+volume for the SQLite file. The container's runtime user is `PUID`/`PGID`
+(default `1001:1001`) rather than hardcoded — **on Synology specifically**,
+plain `chown`/`chmod` on the bind-mounted host directory does not grant
+access; Synology's ACL layer only recognizes named principals, so `PUID`/
+`PGID` must be set to the deploying NAS user's actual uid/gid instead (see
+README's Data persistence note — this cost a full debug cycle on first NAS
+deploy, don't reintroduce a hardcoded uid).
 
 Persistence uses `node:sqlite` (Node's built-in driver, `@types/node` pinned
 to `^22` so its types are available) rather than `better-sqlite3` or Prisma
